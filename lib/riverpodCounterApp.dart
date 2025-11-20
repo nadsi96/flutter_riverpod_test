@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/legacy.dart';
@@ -14,8 +16,10 @@ class RiverpodCounterApp extends StatelessWidget{
 
 /// Provider 정의 >>
 /// int 타입의 counter에 대한 상태를 정의하는 StateNotifier 정의
-/// Riverpod 2.0부터는 StateNotifierProvider 대신 AsyncNotifierProvider 사용 권장
-///  --> AsyncValue 반환해줌
+/// StateNotifier/StateNotifierProvider는 초기 방식으로
+/// 동기 방식이면 Notifier/NotifierProvider
+/// 비동기 방식이면 AsyncNotifier/AsyncNotifierProvider로 구분하여 사용
+/// Riverpod 2.0에서 추가됨
 class CounterNotifier extends StateNotifier<int> {
   CounterNotifier(this.ref) : super(0);
 
@@ -30,7 +34,59 @@ class CounterNotifier extends StateNotifier<int> {
 }
 
 final counterStateProvider = StateNotifierProvider<CounterNotifier, int>((ref){
+  // ref 넘겨주는 이유
+  // 기본적으로 StateNotifier에서는 제공되지 않음
+  // >> StateNotifier 내부에서 다른 Provider에 접근할 수 없음
+  // >> 다른 Provider에 접근 원할 경우 ref 전달해야함
+  // >> 예시처럼 단순한 외부 의존성 없는 내용이라면 ref 전달 필요 없음
+  // Notifier와 AsyncNotifier는 ref가 제공됨
   return CounterNotifier(ref);
+});
+
+
+class CounterNotifier2 extends Notifier<int> {
+
+  @override
+  int build() {
+    // 초기값 지정
+    return 0;
+  }
+
+  Future<void> increment() async {
+    print("CounterNotifier2 increment");
+    state++;
+  }
+  Future<void> decrement() async {
+    print("CounterNotifier2 decrement");
+    state--;
+  }
+}
+
+final counterStateProvider2 = NotifierProvider<CounterNotifier2, int>((){
+  return CounterNotifier2();
+});
+
+
+class CounterNotifier3 extends AsyncNotifier<int>{
+  @override
+  FutureOr<int> build() {
+    return 0;
+  }
+
+  Future<void> increment() async {
+    print("CounterNotifier3 increment");
+    final current = state.value ?? 0;
+    state = AsyncValue.data(current + 1);
+  }
+  Future<void> decrement() async {
+    print("CounterNotifier3 decrement");
+    final current = state.value ?? 0;
+    state = AsyncValue.data(current - 1);
+  }
+}
+
+final counterStateProvider3 = AsyncNotifierProvider<CounterNotifier3, int>( (){
+  return CounterNotifier3();
 });
 /// << Provider 정의
 
@@ -41,8 +97,18 @@ class CounterScreen extends ConsumerWidget{
   Widget txtCounter(){
     return Consumer(builder: (context, ref, widget){
       print("Consumer build");
-      final count = ref.watch(counterStateProvider);
-      return Text("$count", style: const TextStyle(fontSize: 32));
+      // // final count = ref.watch(counterStateProvider);
+      // final count = ref.watch(counterStateProvider2);
+      // return Text("$count", style: const TextStyle(fontSize: 32));
+
+      final countAsync = ref.watch(counterStateProvider3);
+      return countAsync.when(
+        data: (data) {
+          return Text("$data", style: const TextStyle(fontSize: 32));
+        },
+        loading: () => Text("Loading..", style: TextStyle(fontSize: 32)),
+        error: (err, stack) => Text("Error: $err")
+      );
     });
   }
   @override
@@ -69,13 +135,17 @@ class CounterScreen extends ConsumerWidget{
           FloatingActionButton(
             child: const Icon(Icons.add),
             onPressed: (){
-              ref.read(counterStateProvider.notifier).increment();
+              // ref.read(counterStateProvider.notifier).increment();
+              // ref.read(counterStateProvider2.notifier).increment();
+              ref.read(counterStateProvider3.notifier).increment();
             },
           ),
           FloatingActionButton(
             child: const Icon(Icons.remove),
             onPressed: (){
-              ref.read(counterStateProvider.notifier).decrement();
+              // ref.read(counterStateProvider.notifier).decrement();
+              // ref.read(counterStateProvider2.notifier).decrement();
+              ref.read(counterStateProvider3.notifier).decrement();
             },
           ),
         ],
